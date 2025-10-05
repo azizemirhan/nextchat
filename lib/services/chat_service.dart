@@ -29,6 +29,10 @@ class ChatService {
     return ChatMessage.fromJson(response['data']);
   }
 
+  Future<void> deleteSession(int sessionId) async {
+    await ApiService.delete('/chat/sessions/$sessionId', needsAuth: true);
+  }
+
   Future<void> deleteMessage(int messageId) async {
     await ApiService.delete('/messages/$messageId', needsAuth: true);
   }

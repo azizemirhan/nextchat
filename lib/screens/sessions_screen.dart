@@ -1,3 +1,4 @@
+import 'dart:async'; // Timer için bu import'u ekleyin
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -14,12 +15,26 @@ class SessionsScreen extends StatefulWidget {
 }
 
 class _SessionsScreenState extends State<SessionsScreen> {
+  Timer? _sessionsTimer; // Polling için Timer değişkeni
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ChatProvider>().loadSessions();
+      final provider = context.read<ChatProvider>();
+      provider.loadSessions();
+
+      // Her 5 saniyede bir sohbet listesini arka planda sessizce yenile
+      _sessionsTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+        provider.loadSessions(silent: true);
+      });
     });
+  }
+
+  @override
+  void dispose() {
+    _sessionsTimer?.cancel(); // Ekran kapandığında timer'ı durdur
+    super.dispose();
   }
 
   @override
@@ -60,60 +75,92 @@ class _SessionsScreenState extends State<SessionsScreen> {
           }
 
           if (chatProvider.sessions.isEmpty) {
-            return const Center(child: Text('No active chats'));
+            return RefreshIndicator(
+              onRefresh: () => chatProvider.loadSessions(),
+              child: const Center(child: Text('No active chats')),
+            );
           }
 
-          return ListView.builder(
-            itemCount: chatProvider.sessions.length,
-            itemBuilder: (context, index) {
-              final session = chatProvider.sessions[index];
-              final timeFormat = DateFormat('HH:mm');
+          return RefreshIndicator(
+            onRefresh: () => chatProvider.loadSessions(),
+            child: ListView.builder(
+              itemCount: chatProvider.sessions.length,
+              itemBuilder: (context, index) {
+                final session = chatProvider.sessions[index];
+                final timeFormat = DateFormat('HH:mm');
 
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    child: Text(session.visitorName?.substring(0, 1) ?? '?'),
-                  ),
-                  title: Text(session.visitorName ?? 'Anonymous'),
-                  subtitle: session.lastMessage != null
-                      ? Text(
-                    session.lastMessage!.message,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  )
-                      : null,
-                  trailing: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(timeFormat.format(session.lastActivity)),
-                      if (session.unreadCount > 0) ...[
-                        const SizedBox(height: 4),
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Text(
-                            '${session.unreadCount}',
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(session: session),
+                return Dismissible(
+                  key: Key(session.sessionId), // Her eleman için benzersiz bir anahtar
+                  direction: DismissDirection.endToStart, // Sadece sağdan sola kaydırma
+                  onDismissed: (direction) {
+                    // Kaydırma tamamlandığında provider'daki silme metodunu çağır
+                    context.read<ChatProvider>().deleteSession(session.id);
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('${session.visitorName ?? 'Chat'} silindi'),
+                        duration: const Duration(seconds: 2),
                       ),
                     );
                   },
-                ),
-              );
-            },
+                  // Kaydırma sırasında arkada görünecek kırmızı alan
+                  background: Container(
+                    color: Colors.red,
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: const Icon(Icons.delete, color: Colors.white),
+                  ),
+                  child: Card(
+                    margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        child: Text(session.visitorName?.substring(0, 1).toUpperCase() ?? '?'),
+                      ),
+                      title: Text(session.visitorName ?? 'Anonymous'),
+                      subtitle: session.lastMessage != null
+                          ? Text(
+                        session.lastMessage!.message,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      )
+                          : const Text(''),
+                      trailing: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(timeFormat.format(session.lastActivity)),
+                          if (session.unreadCount > 0) ...[
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '${session.unreadCount}',
+                                style: const TextStyle(color: Colors.white, fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ChatScreen(session: session),
+                          ),
+                        ).then((_) {
+                          // Geri gelindiğinde listeyi yenile, okunmamış sayısını güncelle
+                          context.read<ChatProvider>().loadSessions(silent: true);
+                        });
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
           );
         },
       ),

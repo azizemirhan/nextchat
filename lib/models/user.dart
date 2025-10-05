@@ -19,4 +19,13 @@ class User {
       apiKey: json['api_key'],
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'api_key': apiKey,
+    };
+  }
 }

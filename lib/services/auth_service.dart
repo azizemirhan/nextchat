@@ -66,6 +66,7 @@ class AuthService {
   Future<void> _saveAuthData(String token, User user) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenKey, token);
+    // HATA BU SATIRDA MEYDANA GELİYOR:
     await prefs.setString(_userKey, jsonEncode(user));
   }
 

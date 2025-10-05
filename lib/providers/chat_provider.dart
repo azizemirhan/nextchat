@@ -17,8 +17,11 @@ class ChatProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
 
   Future<void> loadSessions({bool silent = false}) async {
-    if (!silent) _isLoading = true;
-    notifyListeners();
+    // Sadece silent değilse loading göster
+    if (!silent) {
+      _isLoading = true;
+      notifyListeners();
+    }
 
     try {
       _sessions = await _chatService.getSessions();
@@ -26,7 +29,10 @@ class ChatProvider with ChangeNotifier {
       print('Load sessions error: $e');
     }
 
-    if (!silent) _isLoading = false;
+    // Sadece silent değilse loading'i kapat
+    if (!silent) {
+      _isLoading = false;
+    }
     notifyListeners();
   }
 
@@ -57,6 +63,16 @@ class ChatProvider with ChangeNotifier {
       return true;
     } catch (e) {
       return false;
+    }
+  }
+
+  Future<void> deleteSession(int sessionId) async {
+    try {
+      await _chatService.deleteSession(sessionId);
+      _sessions.removeWhere((s) => s.id == sessionId);
+      notifyListeners();
+    } catch (e) {
+      print('Delete session error: $e');
     }
   }
 

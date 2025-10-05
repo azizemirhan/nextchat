@@ -21,6 +21,8 @@ class ChatSession {
     this.lastMessage,
   });
 
+  // chat_sesssion.dart
+
   factory ChatSession.fromJson(Map<String, dynamic> json) {
     return ChatSession(
       id: json['id'],
@@ -30,8 +32,15 @@ class ChatSession {
       status: json['status'],
       lastActivity: DateTime.parse(json['last_activity']),
       unreadCount: json['unread_visitor_messages_count'] ?? 0,
-      lastMessage: json['messages'] != null && (json['messages'] as List).isNotEmpty
-          ? ChatMessage.fromJson(json['messages'][0])
+
+      // ESKİ HALİ:
+      // lastMessage: json['messages'] != null && (json['messages'] as List).isNotEmpty
+      //     ? ChatMessage.fromJson(json['messages'][0])
+      //     : null,
+
+      // YENİ HALİ:
+      lastMessage: json['last_message'] != null
+          ? ChatMessage.fromJson(json['last_message'])
           : null,
     );
   }
