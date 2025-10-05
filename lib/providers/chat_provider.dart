@@ -10,26 +10,29 @@ class ChatProvider with ChangeNotifier {
   List<ChatSession> _sessions = [];
   List<ChatMessage> _currentMessages = [];
   bool _isLoading = false;
+  String? _error; // Hata mesajı için değişken ekleyelim
   Timer? _pollingTimer;
 
   List<ChatSession> get sessions => _sessions;
   List<ChatMessage> get currentMessages => _currentMessages;
   bool get isLoading => _isLoading;
+  String? get error => _error; // Hata mesajını dışarıya açalım
 
   Future<void> loadSessions({bool silent = false}) async {
-    // Sadece silent değilse loading göster
     if (!silent) {
       _isLoading = true;
       notifyListeners();
     }
+    _error = null; // Her yeni istekte hatayı temizle
 
     try {
       _sessions = await _chatService.getSessions();
     } catch (e) {
       print('Load sessions error: $e');
+      _error = e.toString(); // Hata mesajını yakala
+      _sessions = []; // Hata durumunda listeyi boşalt
     }
 
-    // Sadece silent değilse loading'i kapat
     if (!silent) {
       _isLoading = false;
     }

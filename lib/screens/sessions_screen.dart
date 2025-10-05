@@ -74,6 +74,19 @@ class _SessionsScreenState extends State<SessionsScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
+          // Hata kontrolünü ekleyelim
+          if (chatProvider.error != null) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Bir hata oluştu:\n${chatProvider.error}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+
           if (chatProvider.sessions.isEmpty) {
             return RefreshIndicator(
               onRefresh: () => chatProvider.loadSessions(),
