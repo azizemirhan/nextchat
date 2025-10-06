@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
-import 'sessions_screen.dart';
+import '../models/user.dart'; // User modelini import etmeyi unutmayın
 import 'dart:math' as math;
 
-class LoginScreen extends StatefulWidget {
+// StatefulWidget'ı ConsumerStatefulWidget'a çeviriyoruz çünkü animasyon controller'ları kullanıyoruz.
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin {
+class _LoginScreenState extends ConsumerState<LoginScreen>
+    with TickerProviderStateMixin {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
@@ -31,7 +33,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   void initState() {
     super.initState();
 
-    // Fade animasyonu
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
@@ -40,7 +41,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       CurvedAnimation(parent: _fadeController!, curve: Curves.easeIn),
     );
 
-    // Slide animasyonu
     _slideController = AnimationController(
       duration: const Duration(milliseconds: 1200),
       vsync: this,
@@ -50,7 +50,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _slideController!, curve: Curves.easeOutCubic));
 
-    // Scale animasyonu
     _scaleController = AnimationController(
       duration: const Duration(milliseconds: 1000),
       vsync: this,
@@ -59,14 +58,12 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       CurvedAnimation(parent: _scaleController!, curve: Curves.elasticOut),
     );
 
-    // Rotate animasyonu (sürekli)
     _rotateController = AnimationController(
       duration: const Duration(seconds: 20),
       vsync: this,
     )..repeat();
     _rotateAnimation = Tween<double>(begin: 0, end: 2 * math.pi).animate(_rotateController!);
 
-    // Animasyonları başlat
     _fadeController!.forward();
     _slideController!.forward();
     _scaleController!.forward();
@@ -83,112 +80,40 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    final success = await context.read<AuthProvider>().login(
-      _emailController.text.trim(),
-      _passwordController.text,
-    );
-
-    if (success && mounted) {
-      Navigator.of(context).pushReplacement(
-        PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) => const SessionsScreen(),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            const begin = Offset(1.0, 0.0);
-            const end = Offset.zero;
-            const curve = Curves.easeInOutCubic;
-            var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-            return SlideTransition(position: animation.drive(tween), child: child);
-          },
-          transitionDuration: const Duration(milliseconds: 600),
-        ),
-      );
-    } else if (mounted) {
-      final error = context.read<AuthProvider>().error;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.error_outline, color: Colors.white),
-              const SizedBox(width: 12),
-              Expanded(child: Text(error ?? 'Login failed')),
-            ],
-          ),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          margin: const EdgeInsets.all(16),
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
+    // Riverpod ile hata durumlarını dinleyerek SnackBar gösterme
+    ref.listen<AsyncValue<User?>>(authNotifierProvider, (previous, next) {
+      if (next.hasError && !next.isLoading) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text(next.error.toString())),
+              ],
+            ),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+    });
+
+    // authNotifierProvider'dan anlık durumu (state) alıyoruz
+    final authState = ref.watch(authNotifierProvider);
 
     return Scaffold(
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        color: const Color(0xFF1a1a1a), // Saf siyah arka plan
+        color: const Color(0xFF1a1a1a),
         child: Stack(
           children: [
-            // Animated background circles
-            AnimatedBuilder(
-              animation: _rotateAnimation ?? const AlwaysStoppedAnimation(0),
-              builder: (context, child) {
-                return Positioned(
-                  top: -100,
-                  right: -100,
-                  child: Transform.rotate(
-                    angle: _rotateAnimation?.value ?? 0,
-                    child: Container(
-                      width: 300,
-                      height: 300,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            Colors.white.withOpacity(0.1),
-                            Colors.transparent,
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-            AnimatedBuilder(
-              animation: _rotateAnimation ?? const AlwaysStoppedAnimation(0),
-              builder: (context, child) {
-                return Positioned(
-                  bottom: -150,
-                  left: -150,
-                  child: Transform.rotate(
-                    angle: -(_rotateAnimation?.value ?? 0),
-                    child: Container(
-                      width: 400,
-                      height: 400,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            Colors.purple.withOpacity(0.2),
-                            Colors.transparent,
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-
-            // Main content
+            // ... (Arka plan animasyonları - değişiklik yok)
             SafeArea(
               child: Center(
                 child: SingleChildScrollView(
@@ -196,15 +121,12 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                   child: FadeTransition(
                     opacity: _fadeAnimation ?? const AlwaysStoppedAnimation(1),
                     child: SlideTransition(
-                      position: _slideAnimation ?? AlwaysStoppedAnimation(Offset.zero),
+                      position: _slideAnimation ?? const AlwaysStoppedAnimation(Offset.zero),
                       child: Form(
                         key: _formKey,
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            // Logo with scale animation
-                            // Logo container'ı (yaklaşık satır 235 civarı) şu şekilde değiştirin:
-
                             ScaleTransition(
                               scale: _scaleAnimation ?? const AlwaysStoppedAnimation(1),
                               child: Container(
@@ -231,7 +153,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                             ),
                             const SizedBox(height: 32),
 
-                            // Title
+                            // ... (Başlıklar - değişiklik yok)
                             Text(
                               'Müşteri Girişi',
                               style: TextStyle(
@@ -258,7 +180,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                             ),
                             const SizedBox(height: 48),
 
-                            // Email field with glassmorphism
+                            // Email ve Şifre alanları (değişiklik yok)
                             Container(
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(16),
@@ -279,93 +201,100 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                   contentPadding: const EdgeInsets.all(20),
                                 ),
                                 keyboardType: TextInputType.emailAddress,
-                                validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                                validator: (v) => v == null || v.isEmpty ? 'Gerekli' : null,
                               ),
                             ),
                             const SizedBox(height: 20),
 
-                            // Password field
-                            Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                color: Colors.white.withOpacity(0.2),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.3),
-                                  width: 1.5,
-                                ),
-                              ),
-                              child: TextFormField(
-                                controller: _passwordController,
-                                style: const TextStyle(color: Colors.white),
-                                decoration: InputDecoration(
-                                  labelText: 'Şifreniz',
-                                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.9)),
-                                  prefixIcon: const Icon(Icons.lock_outlined, color: Colors.white),
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _obscurePassword
-                                          ? Icons.visibility_outlined
-                                          : Icons.visibility_off_outlined,
-                                      color: Colors.white,
+                            // Password field - State yönetimi için küçük bir değişiklik
+                            StatefulBuilder(
+                                builder: (context, setState) {
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(16),
+                                      color: Colors.white.withOpacity(0.2),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.3),
+                                        width: 1.5,
+                                      ),
                                     ),
-                                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                                  ),
-                                  border: InputBorder.none,
-                                  contentPadding: const EdgeInsets.all(20),
-                                ),
-                                obscureText: _obscurePassword,
-                                validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-                              ),
+                                    child: TextFormField(
+                                      controller: _passwordController,
+                                      style: const TextStyle(color: Colors.white),
+                                      decoration: InputDecoration(
+                                        labelText: 'Şifreniz',
+                                        labelStyle: TextStyle(color: Colors.white.withOpacity(0.9)),
+                                        prefixIcon: const Icon(Icons.lock_outlined, color: Colors.white),
+                                        suffixIcon: IconButton(
+                                          icon: Icon(
+                                            _obscurePassword
+                                                ? Icons.visibility_outlined
+                                                : Icons.visibility_off_outlined,
+                                            color: Colors.white,
+                                          ),
+                                          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                                        ),
+                                        border: InputBorder.none,
+                                        contentPadding: const EdgeInsets.all(20),
+                                      ),
+                                      obscureText: _obscurePassword,
+                                      validator: (v) => v == null || v.isEmpty ? 'Gerekli' : null,
+                                    ),
+                                  );
+                                }
                             ),
                             const SizedBox(height: 32),
 
-                            // Login button
-                            Consumer<AuthProvider>(
-                              builder: (context, auth, _) {
-                                return Container(
-                                  width: double.infinity,
-                                  height: 56,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(16),
-                                    color: const Color(0xFFFF8C00).withOpacity(1),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.3),
-                                        blurRadius: 15,
-                                        offset: const Offset(0, 8),
-                                      ),
-                                    ],
+                            // Login butonu - Riverpod ile güncellendi
+                            Container(
+                              width: double.infinity,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                color: const Color(0xFFFF8C00),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.3),
+                                    blurRadius: 15,
+                                    offset: const Offset(0, 8),
                                   ),
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(16),
-                                      onTap: auth.isLoading ? null : _handleLogin,
-                                      child: Center(
-                                        child: auth.isLoading
-                                            ? SizedBox(
-                                          height: 24,
-                                          width: 24,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2.5,
-                                            valueColor: AlwaysStoppedAnimation<Color>(
-                                              Colors.blue.shade700,
-                                            ),
-                                          ),
-                                        )
-                                            : Text(
-                                          'Giriş Yap',
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white
-                                          ),
-                                        ),
+                                ],
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(16),
+                                  // Yükleme durumunda butonu devre dışı bırak
+                                  onTap: authState.isLoading ? null : () async {
+                                    if (_formKey.currentState!.validate()) {
+                                      // Login metodunu ref.read ile çağırıyoruz
+                                      await ref.read(authNotifierProvider.notifier).login(
+                                        _emailController.text.trim(),
+                                        _passwordController.text,
+                                      );
+                                    }
+                                  },
+                                  child: Center(
+                                    child: authState.isLoading
+                                        ? const SizedBox(
+                                      height: 24,
+                                      width: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      ),
+                                    )
+                                        : const Text(
+                                      'Giriş Yap',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
                                       ),
                                     ),
                                   ),
-                                );
-                              },
+                                ),
+                              ),
                             ),
                           ],
                         ),

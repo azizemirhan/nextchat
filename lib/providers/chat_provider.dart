@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -7,49 +8,71 @@ import '../models/chat_message.dart';
 import '../models/chat_sesssion.dart';
 import '../services/chat_service.dart';
 
-class ChatProvider with ChangeNotifier {
-  final ChatService _chatService = ChatService();
+part 'chat_provider.g.dart';
 
-  List<ChatSession> _sessions = [];
-  List<ChatMessage> _currentMessages = [];
-  bool _isLoading = false;
-  String? _error;
+@immutable
+class ChatState {
+  final List<ChatSession> sessions;
+  final List<ChatMessage> currentMessages;
+  final bool isLoading;
+  final String? error;
 
+  const ChatState({
+    this.sessions = const [],
+    this.currentMessages = const [],
+    this.isLoading = false,
+    this.error,
+  });
+
+  ChatState copyWith({
+    List<ChatSession>? sessions,
+    List<ChatMessage>? currentMessages,
+    bool? isLoading,
+    String? error,
+  }) {
+    return ChatState(
+      sessions: sessions ?? this.sessions,
+      currentMessages: currentMessages ?? this.currentMessages,
+      isLoading: isLoading ?? this.isLoading,
+      error: error, // error'ı null yapabilmek için ?? this.error kaldırıldı
+    );
+  }
+}
+
+@riverpod
+class ChatNotifier extends _$ChatNotifier {
+  late final ChatService _chatService;
   WebSocketChannel? _channel;
 
-  List<ChatSession> get sessions => _sessions;
-  List<ChatMessage> get currentMessages => _currentMessages;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
+  @override
+  ChatState build() {
+    _chatService = ChatService();
+    // Notifier dispose olduğunda WebSocket bağlantısını kapat
+    ref.onDispose(() {
+      _channel?.sink.close();
+    });
+    return const ChatState();
+  }
 
-  // ... loadSessions, sendMessage ve diğer metodlarınız (değişiklik yok)
   Future<void> loadSessions({bool silent = false}) async {
     if (!silent) {
-      _isLoading = true;
-      notifyListeners();
+      state = state.copyWith(isLoading: true, error: null);
     }
-    _error = null;
-
     try {
-      _sessions = await _chatService.getSessions();
+      final sessions = await _chatService.getSessions();
+      state = state.copyWith(sessions: sessions, isLoading: false);
     } catch (e) {
-      _error = e.toString();
-      _sessions = [];
+      state = state.copyWith(error: e.toString(), sessions: [], isLoading: false);
     }
-
-    if (!silent) {
-      _isLoading = false;
-    }
-    notifyListeners();
   }
 
   Future<void> loadMessages(String sessionId) async {
+    state = state.copyWith(isLoading: true, error: null);
     try {
-      _currentMessages = await _chatService.getMessages(sessionId);
-      notifyListeners();
+      final messages = await _chatService.getMessages(sessionId);
+      state = state.copyWith(currentMessages: messages, isLoading: false);
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
+      state = state.copyWith(error: e.toString(), isLoading: false);
     }
   }
 
@@ -57,12 +80,9 @@ class ChatProvider with ChangeNotifier {
     try {
       await _chatService.sendMessage(sessionId, message);
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
+      state = state.copyWith(error: e.toString());
     }
   }
-
-  // --- WebSocket Metodları (Güncellenmiş Hali) ---
 
   Future<void> connectToChannel(String sessionId) async {
     disconnect();
@@ -70,7 +90,7 @@ class ChatProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
 
-    const reverbAppKey = 'YOUR_REVERB_APP_KEY'; // .env dosyanızdaki REVERB_APP_KEY
+    const reverbAppKey = 'YOUR_REVERB_APP_KEY';
     const host = '10.0.2.2';
     const port = 8080;
 
@@ -81,55 +101,32 @@ class ChatProvider with ChangeNotifier {
 
     _channel?.stream.listen(
           (rawData) {
-        print('--- YENİ VERİ GELDİ ---');
-        print('Ham Veri: $rawData');
-
         final decodedOuter = jsonDecode(rawData);
         final event = decodedOuter['event'];
 
         if (event == 'pusher:connection_established') {
           print('Reverb bağlantısı başarıyla kuruldu!');
           _subscribeToChannel(sessionId, token);
-        }
-        else if (event == 'new.message') {
-          print('`new.message` olayı yakalandı.');
+        } else if (event == 'new.message') {
           final channel = decodedOuter['channel'];
-
           if (channel == 'private-chat.$sessionId') {
-            print('Doğru kanaldan mesaj geldi.');
-
-            // Laravel'in gönderdiği 'data' alanı bir string, onu tekrar decode ediyoruz.
-            final decodedDataString = decodedOuter['data'];
-            final messagePayload = jsonDecode(decodedDataString);
-
-            // Gelen payload içinde 'message' anahtarı var mı diye kontrol edelim.
+            final messagePayload = jsonDecode(decodedOuter['data']);
             if (messagePayload.containsKey('message')) {
               final messageJson = messagePayload['message'];
-              print('Mesaj JSON verisi: $messageJson');
-
               final newMessage = ChatMessage.fromJson(messageJson);
 
-              if (!_currentMessages.any((msg) => msg.id == newMessage.id)) {
-                _currentMessages.add(newMessage);
-                print('Yeni mesaj listeye eklendi. ID: ${newMessage.id}');
-                notifyListeners(); // EKRANI YENİLE
-                print('notifyListeners() çağrıldı.');
-              } else {
-                print('Bu mesaj zaten listede var. ID: ${newMessage.id}');
+              if (!state.currentMessages.any((msg) => msg.id == newMessage.id)) {
+                // State'i immutable (değişmez) şekilde güncelliyoruz.
+                final updatedMessages = List<ChatMessage>.from(state.currentMessages)..add(newMessage);
+                state = state.copyWith(currentMessages: updatedMessages);
               }
-            } else {
-              print('HATA: Gelen payload içinde "message" anahtarı bulunamadı.');
             }
           }
         }
       },
       onError: (error) {
         print('Reverb Hatası: $error');
-        _error = 'Anlık bağlantı kurulamadı.';
-        notifyListeners();
-      },
-      onDone: () {
-        print('Reverb bağlantısı kapandı.');
+        state = state.copyWith(error: 'Anlık bağlantı kurulamadı.');
       },
     );
   }
@@ -140,9 +137,7 @@ class ChatProvider with ChangeNotifier {
       'data': {
         'channel': 'private-chat.$sessionId',
         'auth': {
-          'headers': {
-            'Authorization': 'Bearer $token',
-          },
+          'headers': { 'Authorization': 'Bearer $token' },
         },
       },
     }));
@@ -157,33 +152,23 @@ class ChatProvider with ChangeNotifier {
     }
   }
 
-  @override
-  void dispose() {
-    disconnect();
-    super.dispose();
-  }
-
-  Future<bool> deleteMessage(int messageId) async {
+  Future<void> deleteMessage(int messageId) async {
     try {
       await _chatService.deleteMessage(messageId);
-      _currentMessages.removeWhere((m) => m.id == messageId);
-      notifyListeners();
-      return true;
+      final updatedMessages = List<ChatMessage>.from(state.currentMessages)..removeWhere((m) => m.id == messageId);
+      state = state.copyWith(currentMessages: updatedMessages);
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
-      return false;
+      state = state.copyWith(error: e.toString());
     }
   }
 
   Future<void> deleteSession(int sessionId) async {
     try {
       await _chatService.deleteSession(sessionId);
-      _sessions.removeWhere((s) => s.id == sessionId);
-      notifyListeners();
+      final updatedSessions = List<ChatSession>.from(state.sessions)..removeWhere((s) => s.id == sessionId);
+      state = state.copyWith(sessions: updatedSessions);
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
+      state = state.copyWith(error: e.toString());
     }
   }
 }

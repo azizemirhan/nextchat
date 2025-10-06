@@ -1,49 +1,43 @@
-import 'package:flutter/material.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../models/user.dart';
 import '../services/auth_service.dart';
 
-class AuthProvider with ChangeNotifier {
-  final AuthService _authService = AuthService();
-  User? _user;
-  bool _isLoading = false;
-  String? _error;
+// Bu satır, build_runner'ın "auth_provider.g.dart" dosyasını oluşturmasını sağlar.
+part 'auth_provider.g.dart';
 
-  User? get user => _user;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-  bool get isAuthenticated => _user != null;
+// @riverpod anotasyonu ile kod üreticisini tetikliyoruz.
+@riverpod
+class AuthNotifier extends _$AuthNotifier {
+  late final AuthService _authService;
 
-  Future<void> checkAuth() async {
-    _isLoading = true;
-    notifyListeners();
-
-    _user = await _authService.getStoredUser();
-    _isLoading = false;
-    notifyListeners();
+  // build metodu, provider ilk oluşturulduğunda çalışır.
+  // Kullanıcının mevcut giriş durumunu kontrol eder.
+  @override
+  Future<User?> build() async {
+    _authService = AuthService();
+    // state'i (durumu) başlangıçta null olarak ayarlıyoruz.
+    state = const AsyncValue.loading();
+    return await _authService.getStoredUser();
   }
 
-  Future<bool> login(String email, String password) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
+  // Login metodu
+  Future<void> login(String email, String password) async {
+    // UI'ın yükleniyor durumuna geçtiğini bildir.
+    state = const AsyncValue.loading();
     try {
+      // Giriş yap ve dönen user nesnesini state'e ata.
       final result = await _authService.login(email, password);
-      _user = result['user'];
-      _isLoading = false;
-      notifyListeners();
-      return true;
+      state = AsyncValue.data(result['user']);
     } catch (e) {
-      _error = e.toString();
-      _isLoading = false;
-      notifyListeners();
-      return false;
+      // Hata durumunda state'i güncelle.
+      state = AsyncValue.error(e, StackTrace.current);
     }
   }
 
+  // Logout metodu
   Future<void> logout() async {
     await _authService.logout();
-    _user = null;
-    notifyListeners();
+    // Çıkış yapıldığında kullanıcı durumunu null yap.
+    state = const AsyncValue.data(null);
   }
 }
