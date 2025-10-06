@@ -30,15 +30,22 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<ChatProvider>();
+
+      // 1. Sayfa açıldığında mevcut mesajları bir kere yükle
       provider.loadMessages(widget.session.sessionId);
-      provider.startPolling(widget.session.sessionId);
+
+      // 2. Polling yerine WebSocket bağlantısını başlat
+      provider.connectToChannel(widget.session.sessionId);
+
       _fabController?.forward();
     });
   }
 
   @override
   void dispose() {
-    context.read<ChatProvider>().stopPolling();
+    // 3. Sayfa kapandığında WebSocket bağlantısını güvenli bir şekilde kes
+    context.read<ChatProvider>().disconnect();
+
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -70,7 +77,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        color: const Color(0xFF1a1a1a), // Saf siyah arka plan
+        color: const Color(0xFF1a1a1a),
         child: SafeArea(
           child: Column(
             children: [
@@ -143,38 +150,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                             widget.session.visitorEmail ?? '',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Colors.green.shade400, Colors.green.shade600],
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          const Text(
-                            'Aktif',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withOpacity(0.8),
                             ),
                           ),
                         ],
@@ -190,6 +166,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   builder: (context, provider, _) {
                     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
+                    if (provider.isLoading && provider.currentMessages.isEmpty) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
                     if (provider.currentMessages.isEmpty) {
                       return Center(
                         child: Column(
@@ -198,7 +178,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                             Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey.shade700),
                             const SizedBox(height: 16),
                             Text(
-                              'No messages yet',
+                              'Henüz mesaj yok',
                               style: TextStyle(
                                 fontSize: 18,
                                 color: Colors.grey.shade500,
@@ -207,7 +187,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Start the conversation',
+                              'Konuşmayı başlatın',
                               style: TextStyle(color: Colors.grey.shade600),
                             ),
                           ],
@@ -259,84 +239,19 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                     ? () async {
                                   final result = await showDialog<bool>(
                                     context: context,
-                                    builder: (ctx) => Dialog(
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(24),
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(20),
-                                          gradient: LinearGradient(
-                                            begin: Alignment.topLeft,
-                                            end: Alignment.bottomRight,
-                                            colors: [Colors.white, Colors.blue.shade50],
-                                          ),
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('Mesajı Sil'),
+                                      content: const Text('Bu mesajı silmek istediğinizden emin misiniz?'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(ctx, false),
+                                          child: const Text('İptal'),
                                         ),
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Container(
-                                              padding: const EdgeInsets.all(16),
-                                              decoration: BoxDecoration(
-                                                color: Colors.red.shade50,
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: Icon(
-                                                Icons.delete_outline,
-                                                size: 32,
-                                                color: Colors.red.shade400,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 16),
-                                            const Text(
-                                              'Delete Message',
-                                              style: TextStyle(
-                                                fontSize: 20,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              'Are you sure you want to delete this message?',
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(color: Colors.grey.shade600),
-                                            ),
-                                            const SizedBox(height: 24),
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: OutlinedButton(
-                                                    onPressed: () => Navigator.pop(ctx, false),
-                                                    style: OutlinedButton.styleFrom(
-                                                      padding: const EdgeInsets.symmetric(vertical: 14),
-                                                      shape: RoundedRectangleBorder(
-                                                        borderRadius: BorderRadius.circular(12),
-                                                      ),
-                                                    ),
-                                                    child: const Text('Cancel'),
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 12),
-                                                Expanded(
-                                                  child: ElevatedButton(
-                                                    onPressed: () => Navigator.pop(ctx, true),
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor: Colors.red,
-                                                      foregroundColor: Colors.white,
-                                                      padding: const EdgeInsets.symmetric(vertical: 14),
-                                                      shape: RoundedRectangleBorder(
-                                                        borderRadius: BorderRadius.circular(12),
-                                                      ),
-                                                    ),
-                                                    child: const Text('Delete'),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(ctx, true),
+                                          child: const Text('Sil', style: TextStyle(color: Colors.red)),
                                         ),
-                                      ),
+                                      ],
                                     ),
                                   );
 
@@ -502,11 +417,11 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   String _formatDate(DateTime date) {
     final now = DateTime.now();
     if (_isSameDay(date, now)) {
-      return 'Today';
+      return 'Bugün';
     } else if (_isSameDay(date, now.subtract(const Duration(days: 1)))) {
-      return 'Yesterday';
+      return 'Dün';
     } else {
-      return DateFormat('MMM dd, yyyy').format(date);
+      return DateFormat('dd MMM, yyyy').format(date);
     }
   }
 }

@@ -1,64 +1,73 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 
 class ApiService {
-  static String? _token;
+  final Dio _dio;
 
-  static void setToken(String token) => _token = token;
-  static void clearToken() => _token = null;
+  static final ApiService _instance = ApiService._internal();
+  factory ApiService() => _instance;
 
-  static Map<String, String> _headers({bool needsAuth = false}) {
-    final headers = {
-      'Content-Type': 'application/json',
+  ApiService._internal()
+      : _dio = Dio(BaseOptions(
+    baseUrl: ApiConfig.baseUrl,
+    connectTimeout: const Duration(milliseconds: 15000),
+    receiveTimeout: const Duration(milliseconds: 15000),
+    headers: {
       'Accept': 'application/json',
-    };
-    if (needsAuth && _token != null) {
-      headers['Authorization'] = 'Bearer $_token';
+      'Content-Type': 'application/json',
+    },
+  )) {
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          final prefs = await SharedPreferences.getInstance();
+          final token = prefs.getString('auth_token'); // Düzeltildi: _tokenKey -> 'auth_token'
+          if (token != null) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
+          return handler.next(options);
+        },
+        onError: (DioException e, handler) async {
+          print('API Hatası: ${e.response?.statusCode} - ${e.message}');
+          return handler.next(e);
+        },
+      ),
+    );
+  }
+
+  Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) async {
+    try {
+      return await _dio.get(path, queryParameters: queryParameters);
+    } on DioException catch (e) {
+      throw _handleError(e);
     }
-    return headers;
   }
 
-  static Future<Map<String, dynamic>> post(String endpoint, {
-    Map<String, dynamic>? body,
-    bool needsAuth = false,
-  }) async {
-    final response = await http.post(
-      Uri.parse('${ApiConfig.baseUrl}$endpoint'),
-      headers: _headers(needsAuth: needsAuth),
-      body: body != null ? jsonEncode(body) : null,
-    ).timeout(const Duration(seconds: 10));
-
-    return _handleResponse(response);
-  }
-
-  static Future<Map<String, dynamic>> get(String endpoint, {
-    bool needsAuth = false,
-  }) async {
-    final response = await http.get(
-      Uri.parse('${ApiConfig.baseUrl}$endpoint'),
-      headers: _headers(needsAuth: needsAuth),
-    ).timeout(const Duration(seconds: 10));
-
-    return _handleResponse(response);
-  }
-
-  static Future<Map<String, dynamic>> delete(String endpoint, {
-    bool needsAuth = false,
-  }) async {
-    final response = await http.delete(
-      Uri.parse('${ApiConfig.baseUrl}$endpoint'),
-      headers: _headers(needsAuth: needsAuth),
-    ).timeout(const Duration(seconds: 10));
-
-    return _handleResponse(response);
-  }
-
-  static Map<String, dynamic> _handleResponse(http.Response response) {
-    final data = jsonDecode(response.body);
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      return data;
+  Future<Response> post(String path, {dynamic data}) async {
+    try {
+      return await _dio.post(path, data: data);
+    } on DioException catch (e) {
+      throw _handleError(e);
     }
-    throw Exception(data['message'] ?? 'An error occurred');
+  }
+
+  // YENİ EKLENEN METOD
+  Future<Response> delete(String path) async {
+    try {
+      return await _dio.delete(path);
+    } on DioException catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  String _handleError(DioException e) {
+    String errorMessage = 'Bir hata oluştu.';
+    if (e.response != null && e.response?.data is Map) {
+      errorMessage = e.response?.data['message'] ?? 'Sunucu hatası.';
+    } else {
+      errorMessage = 'Lütfen internet bağlantınızı kontrol edin.';
+    }
+    return errorMessage;
   }
 }

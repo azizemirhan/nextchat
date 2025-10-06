@@ -166,12 +166,12 @@ class _SessionsScreenState extends State<SessionsScreen> with SingleTickerProvid
                           ),
                           const PopupMenuDivider(),
                           PopupMenuItem<String>(
-                            value: 'logout',
+                            value: 'Çıkış Yap',
                             child: Row(
                               children: [
                                 Icon(Icons.logout, color: Colors.red.shade400, size: 20),
                                 const SizedBox(width: 12),
-                                const Text('Logout'),
+                                const Text('Çıkış Yap'),
                               ],
                             ),
                           ),
