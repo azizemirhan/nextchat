@@ -30,9 +30,8 @@ class ChatSession {
       visitorName: json['visitor_name'],
       visitorEmail: json['visitor_email'],
       status: json['status'],
-      lastActivity: DateTime.parse(json['last_activity']),
+      lastActivity: DateTime.parse(json['last_activity'] ?? json['created_at']),
       unreadCount: json['unread_visitor_messages_count'] ?? 0,
-
       // ESKİ HALİ:
       // lastMessage: json['messages'] != null && (json['messages'] as List).isNotEmpty
       //     ? ChatMessage.fromJson(json['messages'][0])
