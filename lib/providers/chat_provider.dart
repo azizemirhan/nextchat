@@ -1,7 +1,7 @@
-import 'dart:convert'; // jsonDecode ve jsonEncode için eklendi
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // SharedPreferences için eklendi
-import 'package:web_socket_channel/io.dart'; // IOWebSocketChannel için eklendi
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/chat_message.dart';
 import '../models/chat_sesssion.dart';
@@ -22,6 +22,7 @@ class ChatProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
+  // ... loadSessions, sendMessage ve diğer metodlarınız (değişiklik yok)
   Future<void> loadSessions({bool silent = false}) async {
     if (!silent) {
       _isLoading = true;
@@ -54,8 +55,6 @@ class ChatProvider with ChangeNotifier {
 
   Future<void> sendMessage(String sessionId, String message) async {
     try {
-      // Sadece gönderme işlemini yapıyoruz, dönen cevabı beklemiyoruz.
-      // Çünkü mesaj bize anlık olarak WebSocket üzerinden gelecek.
       await _chatService.sendMessage(sessionId, message);
     } catch (e) {
       _error = e.toString();
@@ -63,41 +62,63 @@ class ChatProvider with ChangeNotifier {
     }
   }
 
+  // --- WebSocket Metodları (Güncellenmiş Hali) ---
+
   Future<void> connectToChannel(String sessionId) async {
     disconnect();
 
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
 
-    // --- REVERB İÇİN GÜNCELLENEN KISIM ---
-    // Laravel .env dosyanızdaki REVERB_* değişkenlerini kullanın.
-    const reverbAppKey = 'jnsom1flpeouh2ksikzz'; // .env dosyanızdaki REVERB_APP_KEY
-    const host = '10.0.2.2'; // Android emülatör için. Gerçek cihazda API IP adresiniz.
-    const port = 8080;       // Reverb'in varsayılan portu.
+    const reverbAppKey = 'YOUR_REVERB_APP_KEY'; // .env dosyanızdaki REVERB_APP_KEY
+    const host = '10.0.2.2';
+    const port = 8080;
 
     final uri = Uri.parse('ws://$host:$port/app/$reverbAppKey');
-    // ------------------------------------
 
     _channel = IOWebSocketChannel.connect(uri);
     print('Reverb sunucusuna bağlanılıyor: $uri');
 
     _channel?.stream.listen(
-          (data) {
-        final decoded = jsonDecode(data);
-        final event = decoded['event'];
+          (rawData) {
+        print('--- YENİ VERİ GELDİ ---');
+        print('Ham Veri: $rawData');
+
+        final decodedOuter = jsonDecode(rawData);
+        final event = decodedOuter['event'];
 
         if (event == 'pusher:connection_established') {
           print('Reverb bağlantısı başarıyla kuruldu!');
           _subscribeToChannel(sessionId, token);
-        } else if (event == 'new.message') {
-          final channel = decoded['channel'];
-          if (channel == 'private-chat.$sessionId') {
-            final messageData = jsonDecode(decoded['data'])['message'];
-            final newMessage = ChatMessage.fromJson(messageData);
+        }
+        else if (event == 'new.message') {
+          print('`new.message` olayı yakalandı.');
+          final channel = decodedOuter['channel'];
 
-            if (!_currentMessages.any((msg) => msg.id == newMessage.id)) {
-              _currentMessages.add(newMessage);
-              notifyListeners();
+          if (channel == 'private-chat.$sessionId') {
+            print('Doğru kanaldan mesaj geldi.');
+
+            // Laravel'in gönderdiği 'data' alanı bir string, onu tekrar decode ediyoruz.
+            final decodedDataString = decodedOuter['data'];
+            final messagePayload = jsonDecode(decodedDataString);
+
+            // Gelen payload içinde 'message' anahtarı var mı diye kontrol edelim.
+            if (messagePayload.containsKey('message')) {
+              final messageJson = messagePayload['message'];
+              print('Mesaj JSON verisi: $messageJson');
+
+              final newMessage = ChatMessage.fromJson(messageJson);
+
+              if (!_currentMessages.any((msg) => msg.id == newMessage.id)) {
+                _currentMessages.add(newMessage);
+                print('Yeni mesaj listeye eklendi. ID: ${newMessage.id}');
+                notifyListeners(); // EKRANI YENİLE
+                print('notifyListeners() çağrıldı.');
+              } else {
+                print('Bu mesaj zaten listede var. ID: ${newMessage.id}');
+              }
+            } else {
+              print('HATA: Gelen payload içinde "message" anahtarı bulunamadı.');
             }
           }
         }

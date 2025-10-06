@@ -22,13 +22,24 @@ class ApiService {
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           final prefs = await SharedPreferences.getInstance();
-          final token = prefs.getString('auth_token'); // Düzeltildi: _tokenKey -> 'auth_token'
+          final token = prefs.getString('auth_token');
+
+          // ----- YENİ EKLENEN LOGLAMA KODLARI -----
+          print('--- API İsteği Gönderiliyor ---');
+          print('URL: ${options.uri}');
           if (token != null) {
+            print('Bulunan Token: Bearer $token');
             options.headers['Authorization'] = 'Bearer $token';
+          } else {
+            print('HATA: SharedPreferences içinde token bulunamadı!');
           }
+          print('---------------------------------');
+          // ------------------------------------
+
           return handler.next(options);
         },
         onError: (DioException e, handler) async {
+          // Bu log zaten çalışıyor, o yüzden dokunmuyoruz.
           print('API Hatası: ${e.response?.statusCode} - ${e.message}');
           return handler.next(e);
         },
@@ -52,7 +63,6 @@ class ApiService {
     }
   }
 
-  // YENİ EKLENEN METOD
   Future<Response> delete(String path) async {
     try {
       return await _dio.delete(path);
@@ -64,7 +74,9 @@ class ApiService {
   String _handleError(DioException e) {
     String errorMessage = 'Bir hata oluştu.';
     if (e.response != null && e.response?.data is Map) {
-      errorMessage = e.response?.data['message'] ?? 'Sunucu hatası.';
+      if (e.response?.data.containsKey('message')) {
+        errorMessage = e.response?.data['message'];
+      }
     } else {
       errorMessage = 'Lütfen internet bağlantınızı kontrol edin.';
     }
